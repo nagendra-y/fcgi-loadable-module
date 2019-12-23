@@ -1,7 +1,6 @@
 /** 
- * File: skeleton.c 
- * Description: Bare bones version of a Mesibo Module.
- * Explains the usage of different aspects of the module, various callback functions, callable functions and utilities.
+ * File: fcgi.c 
+ * Description: Minimal FCGI Module 
  *
  * */
 
@@ -53,13 +52,6 @@
 #include <string.h>
 #include "module.h"
 
-/**
- * Function: mesibo_module_http_data_callback
- * ------------------------------------------
- * Example HTTP callback function, through which response is received
- * Refer https://mesibo.com/documentation/on-premise/loadable-modules/#http
- *
- */
 
 /**
  * Sample FCGI Module Configuration
@@ -121,6 +113,12 @@ static mesibo_int_t fcgi_on_message_status(mesibo_module_t *mod, mesibo_message_
 	return MESIBO_RESULT_OK;
 }
 
+/**
+ * Function: mesibo_fcgi_data_callback_
+ * ------------------------------------------
+ * Example FCG callback function, through which response is received
+ * Sends the response back to the user who made the FCGI request
+ */
 int mesibo_fcgi_data_callback(void *cbdata, mesibo_int_t result, const char *buffer, mesibo_int_t size){
 	
 	fcgi_context_t *b = (fcgi_context_t*)cbdata;
@@ -132,8 +130,19 @@ int mesibo_fcgi_data_callback(void *cbdata, mesibo_int_t result, const char *buf
 		return MESIBO_RESULT_FAIL;
 	}
 
-	mesibo_log(mod, fc->log, "%.*s\n", size, buffer);
+	mesibo_log(mod, fc->log, "---- FCGI response ----\n %.*s\n", size, buffer);
+
 	//Send response to the requester
+	mesibo_message_params_t	np;
+	mesibo_message_params_t request_params = b->params;	
+	
+	np = request_params;	
+	np.to =  request_params.from; 
+	np.from = request_params.to; 
+	np.id = rand();
+	
+	
+	mesibo_message(mod, &np, buffer, size);
 	
 	return MESIBO_RESULT_OK;
 }
@@ -158,7 +167,9 @@ static mesibo_int_t fcgi_request(mesibo_module_t *mod, mesibo_message_params_t p
 	fcgi_context_t* cbdata  = (fcgi_context_t*)calloc(1, sizeof(fcgi_context_t));
 	cbdata->mod = mod;
 	cbdata->params = p; //Copy message parmeters to fcgi call back context 
-	
+	cbdata->params.from = strdup(p.from);
+	cbdata->params.to = strdup(p.to);
+
 	mesibo_log(mod, fc->log, "Request parameter object %p\n", &req);
 	mesibo_log(mod, fc->log , "host %s, port %lld, keepalive %lld, cb %p, cbdata %p", 
 			fc->host, fc->port, fc->keepalive,
@@ -184,17 +195,9 @@ static mesibo_int_t fcgi_on_message(mesibo_module_t *mod, mesibo_message_params_
 	mesibo_log(mod, 0, "================> %s on_message called\n", mod->name);
 	mesibo_log(mod, 0, " from %s to %s id %u message %s\n", p->from, p->to, (uint32_t) p->id, message);
 	
-	//don't modify original as other module will be use it 
-	mesibo_message_params_t	np;
-	memset(&np, 0, sizeof(mesibo_message_params_t));
+	mesibo_message_params_t np;
+	memset(&np, 0 ,sizeof(mesibo_message_params_t));
 	memcpy(&np, p, sizeof(mesibo_message_params_t));
-	np.to = p->from;
-	np.from = p->to;
-	np.id = rand();
-	const char* test_message = "Hello from FCGI Module";
-
-	//mesibo_message(mod, &np, test_message, strlen(message));
-	
 	fcgi_request(mod, np, strdup(message), len);	
 	return MESIBO_RESULT_PASS; 
 }
